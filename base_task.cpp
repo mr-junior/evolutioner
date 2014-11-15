@@ -6,6 +6,7 @@
 
 namespace
 {
+
 using namespace graph_randomization;
 void copy_graph_helper(const undirected_graph& input, undirected_graph& output)
 {
@@ -21,13 +22,13 @@ void copy_graph_helper(const undirected_graph& input, undirected_graph& output)
 namespace graph_randomization
 {
 
-  base_task::base_task(const undirected_graph& graph, double mu, size_t step_count, size_t graph_step)
-    : graph_(graph)
-      , rand_generator_(time(NULL))
-      , mu_(mu)
-      , initial_step_count_(step_count)
-      , current_step_(0)
-      , graph_step_(graph_step)
+  base_task::base_task(const undirected_graph& graph, double mu, size_t step_count, size_t graph_step) :
+  graph_(graph),
+  rand_generator_(time(NULL)),
+  mu_(mu),
+  initial_step_count_(step_count),
+  current_step_(0),
+  graph_step_(graph_step)
   {
     num_triangles_ = count_triangles();
     if(0 == initial_step_count_)
@@ -74,7 +75,7 @@ namespace graph_randomization
         }
       }
     }
-    // every triangle is counted triple
+    // every triangle is counted trice
     num = num / 3;
     return num;
   }
@@ -160,4 +161,4 @@ namespace graph_randomization
     return true;
   }
 
-} // end namespace graph_randomization
+}
