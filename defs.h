@@ -1,5 +1,4 @@
-#ifndef _DEFS_H_
-#define _DEFS_H_
+#pragma once
 
 #include <random>
 #include <boost/mpi.hpp>
@@ -40,5 +39,3 @@ typedef boost::graph_traits<undirected_graph>::vertex_iterator vertex_iterator;
 typedef boost::graph_traits<undirected_graph>::adjacency_iterator adjacency_iterator;
 
 }
-
-#endif // _DEFS_H_
