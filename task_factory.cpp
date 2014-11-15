@@ -7,7 +7,7 @@ std::shared_ptr<base_task> get_task(const undirected_graph& graph, double mu, si
 {
   if(std::string("random_switch") == type)
   {
-		return std::make_shared<random_switch_task>(graph, mu, step_count, graph_step);
+    return std::make_shared<random_switch_task>(graph, mu, step_count, graph_step);
   }
   else if(std::string("fixed_degree") == type)
   {
