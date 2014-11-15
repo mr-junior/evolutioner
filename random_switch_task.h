@@ -1,5 +1,4 @@
-#ifndef _RANDOM_SWITCH_TASK_H_
-#define _RANDOM_SWITCH_TASK_H_
+#pragma once
 
 #include "base_task.h"
 
@@ -14,10 +13,8 @@ public:
   virtual void make_randomization_step();
 
 private:
-	boost::variate_generator<random_generator, std::uniform_int_distribution<>>* var_generator_;
-	std::vector<std::pair<vertex, vertex>> non_existing_edges_;
+  boost::variate_generator<random_generator, std::uniform_int_distribution<>>* var_generator_;
+  std::vector<std::pair<vertex, vertex>> non_existing_edges_;
 };
 
-} // end namespace graph_randomization
-
-#endif // _RANDOM_SWITCH_TASK_H_
+}
