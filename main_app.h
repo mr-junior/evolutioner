@@ -17,11 +17,11 @@ class main_app
   private:
     bool parse_command_line();
 
-    void execute_with_single_process();
+    int execute_with_single_process();
 
-    void execute_with_multiple_processes();
-    void execute_main_process();
-    void execute_secondary_process();
+    int execute_with_multiple_processes();
+    int execute_main_process();
+    int execute_secondary_process();
 
     void distribute_data();
     void receive_data();

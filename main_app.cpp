@@ -19,7 +19,6 @@
 #include <boost/serialization/utility.hpp>
 #include <boost/graph/copy.hpp>
 #include <boost/property_map/property_map.hpp>
-//#include <xlslib.h>
 
 enum class message_tag : int
 {
@@ -147,41 +146,31 @@ bool main_app::parse_command_line()
 int main_app::execute()
 {
   assert(1 <= size_);
-  if(0 == rank_ && false == parse_command_line())
+  if(0 == rank_ && !parse_command_line())
   {
     finalize();
     env_.abort(-1);
+    return -1;
   }
   world_.barrier();
-  if(1 == size_)
-  {
-    execute_with_single_process();
-  }
-  else
-  {
+  return (1 == size_) ?
+    execute_with_single_process() :
     execute_with_multiple_processes();
-  }
-  return 0;
 }
 
-void main_app::execute_with_single_process()
+int main_app::execute_with_single_process()
 {
-  load_graph_data();
-  load_mu_data();
+  //load_graph_data();
+  //load_mu_data();
   std::cerr << "NOT IMPLEMENTED YET." << std::endl;
+  return -1;
 }
 
-void main_app::execute_with_multiple_processes()
+int main_app::execute_with_multiple_processes()
 {
-  std::cout << rank_ << " " << __PRETTY_FUNCTION__ << std::endl;
-  if(0 == rank_)
-  {
-    execute_main_process();
-  }
-  else
-  {
+  return (0 == rank_) ?
+    execute_main_process() :
     execute_secondary_process();
-  }
 }
 
 void main_app::finalize()
@@ -192,10 +181,10 @@ void main_app::finalize()
 
 void main_app::load_graph_data()
 {
-  assert(false == graph_file_name_.empty());
+  assert(!graph_file_name_.empty());
   std::ifstream graph_file;
   graph_file.open(graph_file_name_);
-  if(false == graph_file.is_open())
+  if(!graph_file.is_open())
   {
     std::cerr << "Failed to open file containing graph." << std::endl;
     finalize();
@@ -325,11 +314,11 @@ void main_app::collect_results()
     base_index += process_rank_to_mu_count_[i];
   }
   prepare_output_directory();
-  while(false == reqs.empty())
+  while(!reqs.empty())
   {
     for(int i = reqs.size() - 1; i >= 0; --i)
     {
-      if(true == reqs[i].first.test().is_initialized())
+      if(reqs[i].first.test().is_initialized())
       {
         write_output(mu_values_[reqs[i].second], results[reqs[i].second]);
         reqs.erase(reqs.begin() + i);
@@ -338,11 +327,11 @@ void main_app::collect_results()
     usleep(100);
   }
   delete[] results;
-  while(false == graph_reqs.empty())
+  while(!graph_reqs.empty())
   {
     for(int i = graph_reqs.size() - 1; i >= 0; --i)
     {
-      if(true == graph_reqs[i].first.test().is_initialized())
+      if(graph_reqs[i].first.test().is_initialized())
       {
         write_output(mu_values_[graph_reqs[i].second], final_graphs[graph_reqs[i].second]);
         graph_reqs.erase(graph_reqs.begin() + i);
@@ -351,17 +340,22 @@ void main_app::collect_results()
     usleep(100);
   }
   delete[] final_graphs;
-  std::cout << rank_ << " collected all information" << std::endl;
 }
 
-void main_app::execute_main_process()
+int main_app::execute_main_process()
 {
-  std::cout << rank_ << " " << __PRETTY_FUNCTION__ << std::endl;
   assert(1 < size_);
+  std::cout << "[main]: Loading data..." << std::endl;
   load_graph_data();
   load_mu_data();
+  std::cout << "[main]: Finished loading data." << std::endl;
+  std::cout << "[main]: Distributing data to processes..." << std::endl;
   distribute_data();
+  std::cout << "[main]: Finished distributing data to processes." << std::endl;
+  std::cout << "[main]: Collecting results..." << std::endl;
   collect_results();
+  std::cout << "[main]: Finished collecting results." << std::endl;
+  return 0;
 }
 
 void main_app::receive_data()
@@ -377,9 +371,8 @@ void main_app::receive_data()
   world_.send(0, static_cast<int>(message_tag::sync));
 }
 
-void main_app::execute_secondary_process()
+int main_app::execute_secondary_process()
 {
-  std::cout << rank_ << " " << __PRETTY_FUNCTION__ << std::endl;
   receive_data();
   size_t mu_count = mu_values_.size();
   mpi::request* reqs = new mpi::request[mu_count];
@@ -392,7 +385,7 @@ void main_app::execute_secondary_process()
     {
       std::shared_ptr<graph_randomization::base_task> task = graph_randomization::get_task(gr_data_.graph_, mu_values_[i], step_count_, graph_step_, type_); 
       task->perform_randomization();
-      std::vector<std::pair<size_t, size_t>> results_for_i = task->results();
+      const std::vector<std::pair<size_t, size_t>>& results_for_i = task->results();
       results.resize(results_for_i.size());
       for(size_t k = 0; k < results.size(); ++k)
       {
@@ -419,6 +412,7 @@ void main_app::execute_secondary_process()
   mpi::wait_all(graph_reqs, graph_reqs + mu_count);
   delete[] reqs;
   delete[] graph_reqs;
+  return 0;
 }
 
 void main_app::prepare_output_directory()
@@ -436,16 +430,6 @@ void main_app::prepare_output_directory()
 
 void main_app::write_output(double mu, const std::vector<std::pair<size_t, double>>& result) const
 {
-  //xlslib_core::workbook* wrkbk = new xlslib_core::workbook();
-  //xlslib_core::worksheet* wrksht = wrkbk->sheet("Trajectory");
-
-  //for(size_t i = 0; i < result.size(); ++i)
-  //{
-  //	wrksht->number(i, 0, static_cast<double>(i), xlslib_core::FMT_GENERAL, 0);
-  //	wrksht->number(i, 1, result[i].second, xlslib_core::FMT_GENERAL, 0);
-  //  //output << result[i].first << " " << result[i].second << std::endl;
-  //}
-  //std::cout << rank_ << " " << __PRETTY_FUNCTION__ << std::endl;
   std::stringstream file_name;
   file_name << (output_directory_.empty() ? "" : output_directory_ + "/") <<"N" << gr_data_.vertex_count_ 
     << "_p" << gr_data_.probability_ << "_u" << mu << "_T";
@@ -459,12 +443,10 @@ void main_app::write_output(double mu, const std::vector<std::pair<size_t, doubl
   //  return;
   //}
   file_name << "/N" << gr_data_.vertex_count_ << "_p" << gr_data_.probability_ << "_u" << mu << ".txt";
-  //file_name << "/" << 0 << ".xls";
-  //wrkbk->Dump(file_name.str());
 
   std::ofstream output;
   output.open(file_name.str());
-  if(false == output.is_open())
+  if(!output.is_open())
   {
     std::cerr << "Failed to open/create output file." << std::endl;
     return;

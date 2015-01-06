@@ -90,18 +90,18 @@ namespace graph_randomization
       graphs_.resize(initial_step_count_ / graph_step_ + 1);
       copy_graph_helper(graph_, graphs_[graph_count++]);
     }
-    while(current_step_ <= initial_step_count_ || false == is_stabilized())
+    while(current_step_ <= initial_step_count_ || !is_stabilized())
     {
       if(0 == current_step_ % 100000)
       {
         std::cout << "current step = " << current_step_ << std::endl;
       }
+      make_randomization_step();
+      results_.push_back(std::make_pair(current_step_, num_triangles_));
       if((0 != graph_step_) && (0 == current_step_ % graph_step_))
       {
         copy_graph_helper(graph_, graphs_[graph_count++]);
       }
-      make_randomization_step();
-      results_.push_back(std::make_pair(current_step_, num_triangles_));
       ++current_step_;
     }
   }
@@ -147,7 +147,7 @@ namespace graph_randomization
     {
       std::array<long double, 2> probabilities;
       probabilities[0] = exp(mu_ * delta);
-      if(true == std::isinf(probabilities[0]))
+      if(std::isinf(probabilities[0]))
       {
         probabilities[0] = 0;
       }
