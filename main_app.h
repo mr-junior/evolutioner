@@ -12,7 +12,7 @@ class main_app
     main_app(int argc, char* argv[]);
     ~main_app();
 
-    void execute();
+    int execute();
 
   private:
     bool parse_command_line();

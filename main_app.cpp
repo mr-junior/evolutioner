@@ -144,7 +144,7 @@ bool main_app::parse_command_line()
   return true;
 }
 
-void main_app::execute()
+int main_app::execute()
 {
   assert(1 <= size_);
   if(0 == rank_ && false == parse_command_line())
@@ -161,6 +161,7 @@ void main_app::execute()
   {
     execute_with_multiple_processes();
   }
+  return 0;
 }
 
 void main_app::execute_with_single_process()
