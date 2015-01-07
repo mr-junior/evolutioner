@@ -292,7 +292,7 @@ void main_app::collect_results()
   reqs.resize(mu_count);
   graph_reqs.resize(mu_count);
   std::vector<std::pair<size_t, double>>* results = new std::vector<std::pair<size_t, double>>[mu_count];
-  std::vector<graph_randomization::undirected_graph>* final_graphs = new std::vector<graph_randomization::undirected_graph>[mu_count];
+  std::vector<std::string>* serialized_final_graphs = new std::vector<std::string>[mu_count];
   size_t base_index = 0;
   for(size_t i = 1; i < size_; ++i)
   {
@@ -308,7 +308,7 @@ void main_app::collect_results()
   {
     for(size_t j = 0; j < process_rank_to_mu_count_[i]; ++j)
     {
-      graph_reqs[base_index + j].first = world_.irecv(i, static_cast<int>(message_tag::results_graphs)*i+j, final_graphs[base_index + j]);
+      graph_reqs[base_index + j].first = world_.irecv(i, static_cast<int>(message_tag::results_graphs)*i+j, serialized_final_graphs[base_index + j]);
       graph_reqs[base_index + j].second = base_index + j;
     }
     base_index += process_rank_to_mu_count_[i];
@@ -336,16 +336,16 @@ void main_app::collect_results()
     {
       if(graph_reqs[i].first.test().is_initialized())
       {
-        write_output(mu_values_[graph_reqs[i].second], final_graphs[graph_reqs[i].second]);
+        write_output(mu_values_[graph_reqs[i].second], serialized_final_graphs[graph_reqs[i].second]);
         // clean-up unused memory
-        final_graphs[graph_reqs[i].second].clear();
-        final_graphs[graph_reqs[i].second].shrink_to_fit();
+        serialized_final_graphs[graph_reqs[i].second].clear();
+        serialized_final_graphs[graph_reqs[i].second].shrink_to_fit();
         graph_reqs.erase(graph_reqs.begin() + i);
       }
     }
     usleep(100);
   }
-  delete[] final_graphs;
+  delete[] serialized_final_graphs;
 }
 
 int main_app::execute_main_process()
@@ -386,7 +386,7 @@ int main_app::execute_secondary_process()
   for(size_t i = 0; i < mu_count; ++i)
   {
     std::vector<std::pair<size_t, double>> results;
-    std::vector<graph_randomization::undirected_graph> graphs;
+    std::vector<std::string> serialized_graphs;
     for(size_t p = 0; p < pass_count_; ++p)
     {
       std::shared_ptr<graph_randomization::base_task> task = graph_randomization::get_task(gr_data_.graph_, mu_values_[i], step_count_, graph_step_, type_); 
@@ -405,14 +405,14 @@ int main_app::execute_secondary_process()
       }
       //graph.clear();
       //boost::copy_graph(task->graph(), graph);
-      graphs = task->graphs();
+      serialized_graphs = task->serialized_graphs();
     }
     for(size_t j = 0; j < results.size(); ++j)
     {
       results[j].second /= pass_count_;
     }
     reqs[i] = world_.isend(0, static_cast<int>(message_tag::results_base)*rank_ + i, results);
-    graph_reqs[i] = world_.isend(0, static_cast<int>(message_tag::results_graphs)*rank_ + i, graphs);
+    graph_reqs[i] = world_.isend(0, static_cast<int>(message_tag::results_graphs)*rank_ + i, serialized_graphs);
   }
   mpi::wait_all(reqs, reqs + mu_count);
   mpi::wait_all(graph_reqs, graph_reqs + mu_count);
@@ -465,7 +465,7 @@ void main_app::write_output(double mu, const std::vector<std::pair<size_t, doubl
   output.close();
 }
 
-void main_app::write_output(double mu, const std::vector<graph_randomization::undirected_graph>& result) const
+void main_app::write_output(double mu, const std::vector<std::string>& result) const
 {
   for(size_t i = 0; i < result.size(); ++i)
   {
@@ -484,7 +484,11 @@ void main_app::write_output(double mu, const std::vector<graph_randomization::un
     }
     boost::archive::text_oarchive oa(file);
     oa << gr_data_.vertex_count_ << gr_data_.probability_;
-    boost::serialization::save(oa, result[i], 0);
+    std::stringstream ss(result[i]);
+    boost::archive::text_iarchive ia(ss);
+    graph_randomization::undirected_graph graph;
+    boost::serialization::load(ia, graph, 0);
+    boost::serialization::save(oa, graph, 0);
 
     file.close();
   }

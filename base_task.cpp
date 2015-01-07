@@ -47,9 +47,9 @@ namespace graph_randomization
     return graph_;
   }
 
-  const std::vector<undirected_graph>& base_task::graphs() const
+  const std::vector<std::string>& base_task::serialized_graphs() const
   {
-    return graphs_;
+    return serialized_graphs_;
   }
 
   size_t base_task::count_triangles()
@@ -87,8 +87,12 @@ namespace graph_randomization
     unsigned graph_count = 0;
     if(0 != graph_step_)
     {
-      graphs_.resize(initial_step_count_ / graph_step_ + 1);
-      copy_graph_helper(graph_, graphs_[graph_count++]);
+      serialized_graphs_.resize(initial_step_count_ / graph_step_ + 1);
+      //copy_graph_helper(graph_, graphs_[graph_count++]);
+      std::stringstream ss;
+      archive::text_oarchive oa(ss);
+      serialization::save(oa, graph_, 0);
+      serialized_graphs_[graph_count++] = ss.str();
     }
     while(current_step_ <= initial_step_count_ || !is_stabilized())
     {
@@ -100,7 +104,11 @@ namespace graph_randomization
       results_.push_back(std::make_pair(current_step_, num_triangles_));
       if((0 != graph_step_) && (0 == current_step_ % graph_step_))
       {
-        copy_graph_helper(graph_, graphs_[graph_count++]);
+        //copy_graph_helper(graph_, graphs_[graph_count++]);
+        std::stringstream ss;
+        archive::text_oarchive oa(ss);
+        serialization::save(oa, graph_, 0);
+        serialized_graphs_[graph_count++] = ss.str();
       }
       ++current_step_;
     }

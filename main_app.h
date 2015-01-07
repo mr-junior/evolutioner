@@ -32,7 +32,7 @@ class main_app
     void load_mu_data();
     void prepare_output_directory();
     void write_output(double mu, const std::vector<std::pair<size_t, double>>& result) const;
-    void write_output(double mu, const std::vector<graph_randomization::undirected_graph>& result) const;
+    void write_output(double mu, const std::vector<std::string>& result) const;
 
     struct graph_data
     {

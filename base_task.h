@@ -22,7 +22,7 @@ public:
   virtual void perform_randomization();
   const std::vector<std::pair<size_t, size_t>>& results() const;
   const undirected_graph& graph() const;
-  const std::vector<undirected_graph>& graphs() const;
+  const std::vector<std::string>& serialized_graphs() const;
 
 private:
   virtual void make_randomization_step() = 0;
@@ -44,7 +44,7 @@ protected:
   size_t initial_step_count_;
   size_t current_step_;
   size_t graph_step_;
-  std::vector<undirected_graph> graphs_;
+  std::vector<std::string> serialized_graphs_;
 };
 
 }
