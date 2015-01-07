@@ -321,6 +321,9 @@ void main_app::collect_results()
       if(reqs[i].first.test().is_initialized())
       {
         write_output(mu_values_[reqs[i].second], results[reqs[i].second]);
+        // clean-up unused memory
+        results[reqs[i].second].clear();
+        results[reqs[i].second].shrink_to_fit();
         reqs.erase(reqs.begin() + i);
       }
     }
@@ -334,6 +337,9 @@ void main_app::collect_results()
       if(graph_reqs[i].first.test().is_initialized())
       {
         write_output(mu_values_[graph_reqs[i].second], final_graphs[graph_reqs[i].second]);
+        // clean-up unused memory
+        final_graphs[graph_reqs[i].second].clear();
+        final_graphs[graph_reqs[i].second].shrink_to_fit();
         graph_reqs.erase(graph_reqs.begin() + i);
       }
     }
