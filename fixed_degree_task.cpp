@@ -4,7 +4,7 @@
 #include <thread>         // std::this_thread::sleep_for
 #include <chrono>         // std::chrono::seconds
 
-namespace graph_randomization
+namespace gr
 {
 
 fixed_degree_task::fixed_degree_task(const undirected_graph& graph, double mu, int step_count, size_t graph_step)

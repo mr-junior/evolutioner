@@ -16,7 +16,7 @@ namespace po = boost::program_options;
 namespace fs = boost::filesystem;
 namespace ac = boost::accumulators;
 
-namespace graph_randomization
+namespace gr
 {
 
 // undirected graph

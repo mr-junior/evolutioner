@@ -2,7 +2,7 @@
 
 #include "base_task.h"
 
-namespace graph_randomization
+namespace gr
 {
 
 class fixed_degree_task : public base_task

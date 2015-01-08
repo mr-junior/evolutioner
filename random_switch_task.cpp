@@ -1,7 +1,7 @@
 #include "random_switch_task.h"
 #include <system_error>
 
-namespace graph_randomization
+namespace gr
 {
 
 random_switch_task::random_switch_task(const undirected_graph& graph, double mu, size_t step_count, size_t graph_step) :

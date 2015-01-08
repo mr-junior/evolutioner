@@ -1,10 +1,7 @@
 #pragma once
 
 #include "defs.h"
-#include <fstream>
-#include <random>
-#include <thread>
-#include <vector>
+
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/erdos_renyi_generator.hpp>
 #include <boost/lexical_cast.hpp>
@@ -12,7 +9,12 @@
 #include <boost/graph/adj_list_serialize.hpp>
 #include <boost/archive/text_iarchive.hpp>
 
-namespace graph_randomization
+#include <fstream>
+#include <random>
+#include <thread>
+#include <vector>
+
+namespace gr
 {
 
 class base_task
@@ -20,7 +22,7 @@ class base_task
 public:
   base_task(const undirected_graph& graph, double mu, size_t step_count, size_t graph_step);
   virtual void perform_randomization();
-  const std::vector<std::pair<size_t, size_t>>& results() const;
+  const std::vector<size_t>& results() const;
   const undirected_graph& graph() const;
   const std::vector<std::string>& serialized_graphs() const;
 
@@ -40,7 +42,7 @@ protected:
   size_t num_vertices_;
   double mu_;
   double probability_;
-  std::vector<std::pair<size_t, size_t>> results_;
+  std::vector<size_t> results_;
   size_t initial_step_count_;
   size_t current_step_;
   size_t graph_step_;

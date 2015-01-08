@@ -1,13 +1,7 @@
 #include "main_app.h"
 #include "task_factory.h"
-#include "defs.h"
-#include <fstream>
-#include <vector>
-#include <iomanip>
-#include <ctime>
-#include <chrono>
-#include <memory>
-#include <system_error>
+#include "utils.h"
+
 #include <boost/program_options.hpp>
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/erdos_renyi_generator.hpp>
@@ -17,8 +11,17 @@
 #include <boost/archive/text_oarchive.hpp>
 #include <boost/archive/text_iarchive.hpp>
 #include <boost/serialization/utility.hpp>
-#include <boost/graph/copy.hpp>
-#include <boost/property_map/property_map.hpp>
+
+#include <fstream>
+#include <vector>
+#include <iomanip>
+#include <ctime>
+#include <chrono>
+#include <memory>
+#include <system_error>
+
+namespace
+{
 
 enum class message_tag : int
 {
@@ -62,6 +65,11 @@ void validate(boost::any& v, std::vector<std::string> const& values, randomizati
     throw po::validation_error(po::validation_error::invalid_option_value);
   }
 }
+
+}
+
+namespace gr
+{
 
 main_app::main_app(int argc, char* argv[])
   : argc_(argc)
@@ -198,7 +206,7 @@ void main_app::load_graph_data()
   //{
   //	edge_properties[i].m_value = i;
   //}
-  //using namespace graph_randomization;
+  //using namespace gr;
   //ugraph_without_edge_indexes graph;
   //serialization::load(ia, graph, 0);
   //std::map<vertex, size_t> vertex_to_index;
@@ -218,7 +226,7 @@ void main_app::load_graph_data()
   //	vertex target = boost::target(e, graph);
   //	edges.push_back(std::make_pair(vertex_to_index[source], vertex_to_index[target]));
   //}
-  //gr_data_.graph_ = graph_randomization::undirected_graph(edges.begin(), 
+  //gr_data_.graph_ = undirected_graph(edges.begin(), 
   //																												edges.end(), 
   //																												edge_properties.begin(), 
   //																												gr_data_.vertex_count_);
@@ -291,7 +299,7 @@ void main_app::collect_results()
   size_t mu_count = mu_values_.size();
   reqs.resize(mu_count);
   graph_reqs.resize(mu_count);
-  std::vector<std::pair<size_t, double>>* results = new std::vector<std::pair<size_t, double>>[mu_count];
+  std::vector<double>* results = new std::vector<double>[mu_count];
   std::vector<std::string>* serialized_final_graphs = new std::vector<std::string>[mu_count];
   size_t base_index = 0;
   for(size_t i = 1; i < size_; ++i)
@@ -385,31 +393,24 @@ int main_app::execute_secondary_process()
   mpi::request* graph_reqs = new mpi::request[mu_count];
   for(size_t i = 0; i < mu_count; ++i)
   {
-    std::vector<std::pair<size_t, double>> results;
+    std::vector<double> results;
     std::vector<std::string> serialized_graphs;
     for(size_t p = 0; p < pass_count_; ++p)
     {
-      std::shared_ptr<graph_randomization::base_task> task = graph_randomization::get_task(gr_data_.graph_, mu_values_[i], step_count_, graph_step_, type_); 
+      std::shared_ptr<gr::base_task> task = gr::get_task(gr_data_.graph_, mu_values_[i], step_count_, graph_step_, type_); 
       task->perform_randomization();
-      const std::vector<std::pair<size_t, size_t>>& results_for_i = task->results();
+      const std::vector<size_t>& results_for_i = task->results();
       results.resize(results_for_i.size());
-      for(size_t k = 0; k < results.size(); ++k)
-      {
-        results[k].first = k;
-      }
       //assert(step_count_ + 1 == results_for_i.size());
       for(size_t j = 0; j < results_for_i.size(); ++j)
       {
-        assert(results[j].first == results_for_i[j].first);
-        results[j].second += static_cast<double>(results_for_i[j].second);
+        results[j] += static_cast<double>(results_for_i[j]);
       }
-      //graph.clear();
-      //boost::copy_graph(task->graph(), graph);
       serialized_graphs = task->serialized_graphs();
     }
     for(size_t j = 0; j < results.size(); ++j)
     {
-      results[j].second /= pass_count_;
+      results[j] /= pass_count_;
     }
     reqs[i] = world_.isend(0, static_cast<int>(message_tag::results_base)*rank_ + i, results);
     graph_reqs[i] = world_.isend(0, static_cast<int>(message_tag::results_graphs)*rank_ + i, serialized_graphs);
@@ -434,7 +435,7 @@ void main_app::prepare_output_directory()
   fs::create_directory(output_directory_);
 }
 
-void main_app::write_output(double mu, const std::vector<std::pair<size_t, double>>& result) const
+void main_app::write_output(double mu, const std::vector<double>& result) const
 {
   std::stringstream file_name;
   file_name << (output_directory_.empty() ? "" : output_directory_ + "/") <<"N" << gr_data_.vertex_count_ 
@@ -460,7 +461,7 @@ void main_app::write_output(double mu, const std::vector<std::pair<size_t, doubl
   output << gr_data_.vertex_count_ << " " << gr_data_.probability_ << " " << mu << std::endl;
   for(size_t i = 0; i < result.size(); ++i)
   {
-    output << result[i].first << " " << result[i].second << std::endl;
+    output << i << " " << result[i] << std::endl;
   }
   output.close();
 }
@@ -484,12 +485,14 @@ void main_app::write_output(double mu, const std::vector<std::string>& result) c
     }
     boost::archive::text_oarchive oa(file);
     oa << gr_data_.vertex_count_ << gr_data_.probability_;
-    std::stringstream ss(result[i]);
-    boost::archive::text_iarchive ia(ss);
-    graph_randomization::undirected_graph graph;
-    boost::serialization::load(ia, graph, 0);
+    std::string decompressed;
+    utils::decompress_string(result[i], decompressed);
+    undirected_graph graph;
+    utils::deserialize_graph(decompressed, graph);
     boost::serialization::save(oa, graph, 0);
 
     file.close();
   }
+}
+
 }

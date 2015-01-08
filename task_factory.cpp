@@ -1,6 +1,6 @@
 #include "task_factory.h"
 
-namespace graph_randomization
+namespace gr
 {
 
 std::shared_ptr<base_task> get_task(const undirected_graph& graph, double mu, size_t step_count, size_t graph_step, const std::string& type)
