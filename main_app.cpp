@@ -300,56 +300,50 @@ void main_app::collect_results()
   reqs.resize(mu_count);
   graph_reqs.resize(mu_count);
   std::vector<double>* results = new std::vector<double>[mu_count];
-  std::vector<std::string>* serialized_final_graphs = new std::vector<std::string>[mu_count];
+  std::vector<std::string>* graphs = new std::vector<std::string>[mu_count];
   size_t base_index = 0;
   for(size_t i = 1; i < size_; ++i)
   {
     for(size_t j = 0; j < rank_to_mu_indexes_range_[i].second; ++j)
     {
       reqs[base_index + j] = world_.irecv(i, static_cast<int>(message_tag::results_base)*i+j, results[base_index + j]);
-    }
-    base_index += rank_to_mu_indexes_range_[i].second;
-  }
-  base_index = 0;
-  for(size_t i = 1; i < size_; ++i)
-  {
-    for(size_t j = 0; j < rank_to_mu_indexes_range_[i].second; ++j)
-    {
-      graph_reqs[base_index + j] = world_.irecv(i, static_cast<int>(message_tag::results_graphs)*i+j, serialized_final_graphs[base_index + j]);
+      graph_reqs[base_index + j] = world_.irecv(i, static_cast<int>(message_tag::results_graphs)*i+j, graphs[base_index + j]);
     }
     base_index += rank_to_mu_indexes_range_[i].second;
   }
   prepare_output_directory();
-  while(!reqs.empty())
+  while(!reqs.empty() || !graph_reqs.empty())
   {
-    const std::pair<mpi::status, std::vector<mpi::request>::iterator>& finished =
-      mpi::wait_any(reqs.begin(), reqs.end());
-    int source = finished.first.source();
-    int tag = finished.first.tag();
-    int mu_index = rank_to_mu_indexes_range_[source].first;
-    mu_index += tag - source * static_cast<int>(message_tag::results_base);
-    write_output(mu_values_[mu_index], results[mu_index]);
-    // clean-up unused memory
-    results[mu_index].clear();
-    results[mu_index].shrink_to_fit();
-    reqs.erase(finished.second);
+    {
+      const std::pair<mpi::status, std::vector<mpi::request>::iterator>& finished =
+        mpi::wait_any(reqs.begin(), reqs.end());
+      int source = finished.first.source();
+      int tag = finished.first.tag();
+      int mu_index = rank_to_mu_indexes_range_[source].first;
+      mu_index += tag - source * static_cast<int>(message_tag::results_base);
+      write_output(mu_values_[mu_index], results[mu_index]);
+      // clean-up unused memory
+      results[mu_index].clear();
+      results[mu_index].shrink_to_fit();
+      reqs.erase(finished.second);
+    }
+
+    {
+      const std::pair<mpi::status, std::vector<mpi::request>::iterator>& finished =
+        mpi::wait_any(graph_reqs.begin(), graph_reqs.end());
+      int source = finished.first.source();
+      int tag = finished.first.tag();
+      int mu_index = rank_to_mu_indexes_range_[source].first;
+      mu_index += tag - source * static_cast<int>(message_tag::results_graphs); 
+      write_output(mu_values_[mu_index], graphs[mu_index]);
+      // clean-up unused memory
+      graphs[mu_index].clear();
+      graphs[mu_index].shrink_to_fit();
+      graph_reqs.erase(finished.second);
+    }
   }
   delete[] results;
-  while(!graph_reqs.empty())
-  {
-    const std::pair<mpi::status, std::vector<mpi::request>::iterator>& finished =
-      mpi::wait_any(graph_reqs.begin(), graph_reqs.end());
-    int source = finished.first.source();
-    int tag = finished.first.tag();
-    int mu_index = rank_to_mu_indexes_range_[source].first;
-    mu_index += tag - source * static_cast<int>(message_tag::results_graphs); 
-    write_output(mu_values_[mu_index], serialized_final_graphs[mu_index]);
-    // clean-up unused memory
-    serialized_final_graphs[mu_index].clear();
-    serialized_final_graphs[mu_index].shrink_to_fit();
-    graph_reqs.erase(finished.second);
-  }
-  delete[] serialized_final_graphs;
+  delete[] graphs;
 }
 
 int main_app::execute_main_process()
@@ -436,15 +430,7 @@ void main_app::write_output(double mu, const std::vector<double>& result) const
   std::stringstream file_name;
   file_name << (output_directory_.empty() ? "" : output_directory_ + "/") <<"N" << gr_data_.vertex_count_ 
     << "_p" << gr_data_.probability_ << "_u" << mu << "_T";
-  //try
-  //{
   fs::create_directory(file_name.str());
-  //}
-  //catch(fs::basic_filesystem_error&)
-  //{
-  //  std::cerr << "Directory already exists." << std::endl;
-  //  return;
-  //}
   file_name << "/N" << gr_data_.vertex_count_ << "_p" << gr_data_.probability_ << "_u" << mu << ".txt";
 
   std::ofstream output;
@@ -469,6 +455,8 @@ void main_app::write_output(double mu, const std::vector<std::string>& result) c
     std::stringstream file_name;
     file_name << (output_directory_.empty() ? "" : output_directory_ + "/") <<"N" << gr_data_.vertex_count_ 
       << "_p" << gr_data_.probability_ << "_u" << mu << "_T";
+    fs::create_directory(file_name.str());
+    file_name << "/graphs";
     fs::create_directory(file_name.str());
     file_name << "/final_graph__N" << gr_data_.vertex_count_ << "_p" << gr_data_.probability_ << "_u" << mu << "_" << i * graph_step_ << ".txt";
 
