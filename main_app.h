@@ -3,6 +3,7 @@
 #include "defs.h"
 
 #include <string>
+#include <map>
 
 namespace gr
 {
@@ -50,7 +51,7 @@ private:
   mpi::communicator world_;
   size_t rank_;
   size_t size_;
-  std::map<size_t, size_t> process_rank_to_mu_count_;
+  std::map<size_t, std::pair<size_t, size_t>> rank_to_mu_indexes_range_;
   std::string output_directory_;
   std::string graph_file_name_;
   std::string mu_file_name_;

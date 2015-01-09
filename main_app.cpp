@@ -284,7 +284,7 @@ void main_app::distribute_data()
     }
     std::vector<double> mu_values_for_process_i(mu_values_.begin() + base_index, mu_values_.begin() + base_index + mu_per_process_i);
     world_.send(i, static_cast<int>(message_tag::mu_values_vector), mu_values_for_process_i);
-    process_rank_to_mu_count_[i] = mu_per_process_i;
+    rank_to_mu_indexes_range_[i] = std::make_pair(base_index, mu_per_process_i);
     base_index += mu_per_process_i;
 
     world_.send(i, static_cast<int>(message_tag::task_type), type_);
@@ -294,8 +294,8 @@ void main_app::distribute_data()
 
 void main_app::collect_results()
 {
-  std::vector<std::pair<mpi::request, int>> reqs;
-  std::vector<std::pair<mpi::request, int>> graph_reqs;
+  std::vector<mpi::request> reqs;
+  std::vector<mpi::request> graph_reqs;
   size_t mu_count = mu_values_.size();
   reqs.resize(mu_count);
   graph_reqs.resize(mu_count);
@@ -304,54 +304,50 @@ void main_app::collect_results()
   size_t base_index = 0;
   for(size_t i = 1; i < size_; ++i)
   {
-    for(size_t j = 0; j < process_rank_to_mu_count_[i]; ++j)
+    for(size_t j = 0; j < rank_to_mu_indexes_range_[i].second; ++j)
     {
-      reqs[base_index + j].first = world_.irecv(i, static_cast<int>(message_tag::results_base)*i+j, results[base_index + j]);
-      reqs[base_index + j].second = base_index + j;
+      reqs[base_index + j] = world_.irecv(i, static_cast<int>(message_tag::results_base)*i+j, results[base_index + j]);
     }
-    base_index += process_rank_to_mu_count_[i];
+    base_index += rank_to_mu_indexes_range_[i].second;
   }
   base_index = 0;
   for(size_t i = 1; i < size_; ++i)
   {
-    for(size_t j = 0; j < process_rank_to_mu_count_[i]; ++j)
+    for(size_t j = 0; j < rank_to_mu_indexes_range_[i].second; ++j)
     {
-      graph_reqs[base_index + j].first = world_.irecv(i, static_cast<int>(message_tag::results_graphs)*i+j, serialized_final_graphs[base_index + j]);
-      graph_reqs[base_index + j].second = base_index + j;
+      graph_reqs[base_index + j] = world_.irecv(i, static_cast<int>(message_tag::results_graphs)*i+j, serialized_final_graphs[base_index + j]);
     }
-    base_index += process_rank_to_mu_count_[i];
+    base_index += rank_to_mu_indexes_range_[i].second;
   }
   prepare_output_directory();
   while(!reqs.empty())
   {
-    for(int i = reqs.size() - 1; i >= 0; --i)
-    {
-      if(reqs[i].first.test().is_initialized())
-      {
-        write_output(mu_values_[reqs[i].second], results[reqs[i].second]);
-        // clean-up unused memory
-        results[reqs[i].second].clear();
-        results[reqs[i].second].shrink_to_fit();
-        reqs.erase(reqs.begin() + i);
-      }
-    }
-    usleep(100);
+    const std::pair<mpi::status, std::vector<mpi::request>::iterator>& finished =
+      mpi::wait_any(reqs.begin(), reqs.end());
+    int source = finished.first.source();
+    int tag = finished.first.tag();
+    int mu_index = rank_to_mu_indexes_range_[source].first;
+    mu_index += tag - source * static_cast<int>(message_tag::results_base);
+    write_output(mu_values_[mu_index], results[mu_index]);
+    // clean-up unused memory
+    results[mu_index].clear();
+    results[mu_index].shrink_to_fit();
+    reqs.erase(finished.second);
   }
   delete[] results;
   while(!graph_reqs.empty())
   {
-    for(int i = graph_reqs.size() - 1; i >= 0; --i)
-    {
-      if(graph_reqs[i].first.test().is_initialized())
-      {
-        write_output(mu_values_[graph_reqs[i].second], serialized_final_graphs[graph_reqs[i].second]);
-        // clean-up unused memory
-        serialized_final_graphs[graph_reqs[i].second].clear();
-        serialized_final_graphs[graph_reqs[i].second].shrink_to_fit();
-        graph_reqs.erase(graph_reqs.begin() + i);
-      }
-    }
-    usleep(100);
+    const std::pair<mpi::status, std::vector<mpi::request>::iterator>& finished =
+      mpi::wait_any(graph_reqs.begin(), graph_reqs.end());
+    int source = finished.first.source();
+    int tag = finished.first.tag();
+    int mu_index = rank_to_mu_indexes_range_[source].first;
+    mu_index += tag - source * static_cast<int>(message_tag::results_graphs); 
+    write_output(mu_values_[mu_index], serialized_final_graphs[mu_index]);
+    // clean-up unused memory
+    serialized_final_graphs[mu_index].clear();
+    serialized_final_graphs[mu_index].shrink_to_fit();
+    graph_reqs.erase(finished.second);
   }
   delete[] serialized_final_graphs;
 }
