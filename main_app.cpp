@@ -2,23 +2,24 @@
 #include "task_factory.h"
 #include "utils.h"
 
-#include <boost/program_options.hpp>
+#include <boost/archive/text_iarchive.hpp>
+#include <boost/archive/text_oarchive.hpp>
+#include <boost/graph/adj_list_serialize.hpp>
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/erdos_renyi_generator.hpp>
-#include <boost/lexical_cast.hpp>
 #include <boost/graph/random.hpp>
-#include <boost/graph/adj_list_serialize.hpp>
-#include <boost/archive/text_oarchive.hpp>
-#include <boost/archive/text_iarchive.hpp>
+#include <boost/lexical_cast.hpp>
+#include <boost/program_options.hpp>
 #include <boost/serialization/utility.hpp>
 
-#include <fstream>
-#include <vector>
-#include <iomanip>
-#include <ctime>
 #include <chrono>
+#include <ctime>
+#include <fstream>
+#include <future>
+#include <iomanip>
 #include <memory>
 #include <system_error>
+#include <vector>
 
 namespace
 {
@@ -200,36 +201,6 @@ void main_app::load_graph_data()
   }
   archive::text_iarchive ia(graph_file);
   ia >> gr_data_.vertex_count_ >> gr_data_.probability_;
-  //std::vector< boost::property<boost::edge_index_t, std::size_t> > edge_properties;
-  //edge_properties.resize(gr_data_.vertex_count_);
-  //for(size_t i = 0; i < gr_data_.vertex_count_; ++i)
-  //{
-  //	edge_properties[i].m_value = i;
-  //}
-  //using namespace gr;
-  //ugraph_without_edge_indexes graph;
-  //serialization::load(ia, graph, 0);
-  //std::map<vertex, size_t> vertex_to_index;
-  //vertex_iterator vertex_it, vertex_it_end;
-  //boost::tie(vertex_it, vertex_it_end) = boost::vertices(graph);
-  //for(size_t index = 0; vertex_it != vertex_it_end; ++vertex_it, ++index)
-  //{
-  //	vertex_to_index[*vertex_it] = index;
-  //}
-  //std::vector< std::pair<size_t, size_t> > edges;
-  //boost::graph_traits<ugraph_without_edge_indexes>::edge_iterator edge_it, edge_it_end;
-  //boost::tie(edge_it, edge_it_end) = boost::edges(graph);
-  //for(; edge_it != edge_it_end; ++edge_it)
-  //{
-  //	edge e = *edge_it;
-  //	vertex source = boost::source(e, graph);
-  //	vertex target = boost::target(e, graph);
-  //	edges.push_back(std::make_pair(vertex_to_index[source], vertex_to_index[target]));
-  //}
-  //gr_data_.graph_ = undirected_graph(edges.begin(), 
-  //																												edges.end(), 
-  //																												edge_properties.begin(), 
-  //																												gr_data_.vertex_count_);
   serialization::load(ia, gr_data_.graph_, 0);
   graph_file.close();
 }
@@ -299,8 +270,10 @@ void main_app::collect_results()
   size_t mu_count = mu_values_.size();
   reqs.resize(mu_count);
   graph_reqs.resize(mu_count);
-  std::vector<double>* results = new std::vector<double>[mu_count];
-  std::vector<std::string>* graphs = new std::vector<std::string>[mu_count];
+  std::vector<std::vector<double>> results;
+  results.resize(mu_count);
+  std::vector<std::vector<std::string>> graphs;
+  graphs.resize(mu_count);
   size_t base_index = 0;
   for(size_t i = 1; i < size_; ++i)
   {
@@ -311,39 +284,60 @@ void main_app::collect_results()
     }
     base_index += rank_to_mu_indexes_range_[i].second;
   }
+  std::vector<std::future<void>> workers;
   prepare_output_directory();
   while(!reqs.empty() || !graph_reqs.empty())
   {
     {
       const std::pair<mpi::status, std::vector<mpi::request>::iterator>& finished =
         mpi::wait_any(reqs.begin(), reqs.end());
-      int source = finished.first.source();
-      int tag = finished.first.tag();
-      int mu_index = rank_to_mu_indexes_range_[source].first;
-      mu_index += tag - source * static_cast<int>(message_tag::results_base);
-      write_output(mu_values_[mu_index], results[mu_index]);
-      // clean-up unused memory
-      results[mu_index].clear();
-      results[mu_index].shrink_to_fit();
+      workers.emplace_back(std::async(std::launch::async,
+        [&] { 
+          int source = finished.first.source();
+          int tag = finished.first.tag();
+          int mu_index = rank_to_mu_indexes_range_[source].first;
+          mu_index += tag - source * static_cast<int>(message_tag::results_base);
+          write_output(mu_values_[mu_index], results[mu_index]);
+          // clean-up unused memory
+          results[mu_index].clear();
+          results[mu_index].shrink_to_fit();
+        }));
       reqs.erase(finished.second);
     }
 
     {
       const std::pair<mpi::status, std::vector<mpi::request>::iterator>& finished =
         mpi::wait_any(graph_reqs.begin(), graph_reqs.end());
-      int source = finished.first.source();
-      int tag = finished.first.tag();
-      int mu_index = rank_to_mu_indexes_range_[source].first;
-      mu_index += tag - source * static_cast<int>(message_tag::results_graphs); 
-      write_output(mu_values_[mu_index], graphs[mu_index]);
-      // clean-up unused memory
-      graphs[mu_index].clear();
-      graphs[mu_index].shrink_to_fit();
+      workers.emplace_back(std::async(std::launch::async,
+        [&] { 
+          int source = finished.first.source();
+          int tag = finished.first.tag();
+          int mu_index = rank_to_mu_indexes_range_[source].first;
+          mu_index += tag - source * static_cast<int>(message_tag::results_graphs); 
+          write_output(mu_values_[mu_index], graphs[mu_index]);
+          // clean-up unused memory
+          graphs[mu_index].clear();
+          graphs[mu_index].shrink_to_fit();
+        }));
       graph_reqs.erase(finished.second);
     }
   }
-  delete[] results;
-  delete[] graphs;
+  std::chrono::milliseconds span(1000);
+  while(!workers.empty())
+  {
+    std::vector<std::future<void>>::iterator it = workers.begin();
+    while(workers.end() != it)
+    {
+      if(std::future_status::ready == it->wait_for(span))
+      {
+        it = workers.erase(it);
+      }
+      else
+      {
+        ++it;
+      }
+    }
+  }
 }
 
 int main_app::execute_main_process()
