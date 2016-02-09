@@ -1,8 +1,8 @@
-CXX=/data/home/minas/tools/mpich/install/bin/mpic++
-CXXFLAGS=-O3 -std=c++11 -I/data/home/minas/tools/boost/install/include -I.
+CXX=/home/minas/third_party/mpich2/install/bin/mpic++
+CXXFLAGS=-O3 -std=c++11 -I/home/minas/third_party/boost/install/include -I.
 TAG=opt
-LIBBZ2_PATH=/data/home/minas/tools/bzip2-1.0.6
-LFLAGS=-lstdc++ -L/data/home/minas/tools/boost/install/lib -L$(LIBBZ2_PATH) -Wl,-Bstatic -lboost_serialization -lboost_graph -lboost_regex -lboost_system -lboost_filesystem -lboost_mpi -lboost_program_options -lboost_iostreams -lbz2 -Wl,-Bdynamic
+LIBBZ2_PATH=/home/minas/third_party/bzip2/install/lib
+LFLAGS=-L/home/minas/third_party/boost/install/lib -lboost_serialization -lboost_graph -lboost_regex -lboost_system -lboost_filesystem -lboost_mpi -lboost_program_options -lboost_iostreams -lbz2 -lpthread
 DIR=objs
 BIN=bin
 SOURCES=$(wildcard *.cpp)

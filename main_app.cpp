@@ -286,43 +286,56 @@ void main_app::collect_results()
   }
   std::vector<std::future<void>> workers;
   prepare_output_directory();
+  std::chrono::milliseconds span(2000);
   while(!reqs.empty() || !graph_reqs.empty())
   {
+    if(!reqs.empty())
     {
-      const std::pair<mpi::status, std::vector<mpi::request>::iterator>& finished =
-        mpi::wait_any(reqs.begin(), reqs.end());
-      workers.emplace_back(std::async(std::launch::async,
-        [&] { 
-          int source = finished.first.source();
-          int tag = finished.first.tag();
-          int mu_index = rank_to_mu_indexes_range_[source].first;
-          mu_index += tag - source * static_cast<int>(message_tag::results_base);
-          write_output(mu_values_[mu_index], results[mu_index]);
-          // clean-up unused memory
-          results[mu_index].clear();
-          results[mu_index].shrink_to_fit();
-        }));
-      reqs.erase(finished.second);
+      const boost::optional<std::pair<mpi::status, std::vector<mpi::request>::iterator>>& finished =
+        mpi::test_any(reqs.begin(), reqs.end());
+      if(finished)
+      {
+        workers.emplace_back(std::async(std::launch::async,
+          [&]
+          {
+            int source = (*finished).first.source();
+            int tag = (*finished).first.tag();
+            int mu_index = rank_to_mu_indexes_range_[source].first;
+            mu_index += tag - source * static_cast<int>(message_tag::results_base);
+            write_output(mu_values_[mu_index], results[mu_index]);
+            // clean-up unused memory
+            results[mu_index].clear();
+            results[mu_index].shrink_to_fit();
+          }
+        ));
+        reqs.erase((*finished).second);
+      }
     }
 
+    if(!graph_reqs.empty())
     {
-      const std::pair<mpi::status, std::vector<mpi::request>::iterator>& finished =
-        mpi::wait_any(graph_reqs.begin(), graph_reqs.end());
-      workers.emplace_back(std::async(std::launch::async,
-        [&] { 
-          int source = finished.first.source();
-          int tag = finished.first.tag();
-          int mu_index = rank_to_mu_indexes_range_[source].first;
-          mu_index += tag - source * static_cast<int>(message_tag::results_graphs); 
-          write_output(mu_values_[mu_index], graphs[mu_index]);
-          // clean-up unused memory
-          graphs[mu_index].clear();
-          graphs[mu_index].shrink_to_fit();
-        }));
-      graph_reqs.erase(finished.second);
+      const boost::optional<std::pair<mpi::status, std::vector<mpi::request>::iterator>>& finished =
+        mpi::test_any(graph_reqs.begin(), graph_reqs.end());
+      if(finished)
+      {
+        workers.emplace_back(std::async(std::launch::async,
+          [&]
+          {
+            int source = (*finished).first.source();
+            int tag = (*finished).first.tag();
+            int mu_index = rank_to_mu_indexes_range_[source].first;
+            mu_index += tag - source * static_cast<int>(message_tag::results_graphs);
+            write_output(mu_values_[mu_index], graphs[mu_index]);
+            // clean-up unused memory
+            graphs[mu_index].clear();
+            graphs[mu_index].shrink_to_fit();
+          }
+        ));
+        graph_reqs.erase((*finished).second);
+      }
     }
+    std::this_thread::sleep_for(span);
   }
-  std::chrono::milliseconds span(1000);
   while(!workers.empty())
   {
     std::vector<std::future<void>>::iterator it = workers.begin();
@@ -373,8 +386,6 @@ int main_app::execute_secondary_process()
 {
   receive_data();
   size_t mu_count = mu_values_.size();
-  mpi::request* reqs = new mpi::request[mu_count];
-  mpi::request* graph_reqs = new mpi::request[mu_count];
   for(size_t i = 0; i < mu_count; ++i)
   {
     std::vector<double> results;
@@ -396,13 +407,9 @@ int main_app::execute_secondary_process()
     {
       results[j] /= pass_count_;
     }
-    reqs[i] = world_.isend(0, static_cast<int>(message_tag::results_base)*rank_ + i, results);
-    graph_reqs[i] = world_.isend(0, static_cast<int>(message_tag::results_graphs)*rank_ + i, serialized_graphs);
+    world_.send(0, static_cast<int>(message_tag::results_base)*rank_ + i, results);
+    world_.send(0, static_cast<int>(message_tag::results_graphs)*rank_ + i, serialized_graphs);
   }
-  mpi::wait_all(reqs, reqs + mu_count);
-  mpi::wait_all(graph_reqs, graph_reqs + mu_count);
-  delete[] reqs;
-  delete[] graph_reqs;
   return 0;
 }
 

@@ -26,7 +26,7 @@ void fixed_degree_task::make_randomization_step()
   vertex vt1 = boost::target(e1, graph_);
   vertex vs2 = boost::source(e2, graph_);
   vertex vt2 = boost::target(e2, graph_);
-  while(e1 == e2 || vs1 == vs2 || vt1 == vt2 ||
+  while(e1 == e2 || vs1 == vs2 || vt1 == vt2 || vs1 == vt2 || vt1 == vs2 ||
     boost::edge(vs1, vs2, graph_).second ||
     boost::edge(vt1, vt2, graph_).second)
   {
