@@ -26,17 +26,9 @@ namespace
 
 enum class message_tag : int
 {
-  vertex_count = 1,
-  probability,
-  graph,
-  step_count,
-  pass_count,
-  graph_step,
   mu_values_vector,
-  sync,
-  task_type,
-  results_base = 1000,
-  results_graphs = 10000
+  results_directory,
+  sync
 };
 
 //validator for type field
@@ -72,25 +64,21 @@ void validate(boost::any& v, std::vector<std::string> const& values, randomizati
 namespace gr
 {
 
-main_app::main_app(int argc, char* argv[])
-  : argc_(argc)
-  , argv_(argv)
-  , type_(std::string("random_switch"))
-  , env_(argc, argv)
-  , step_count_(0)
-  , pass_count_(1)
-	, graph_step_(0)
+main_app::main_app(int argc, char** argv) :
+  env_(argc, argv),
+  type_(std::string("random_switch")),
+  step_count_(0),
+  pass_count_(1),
+  graph_step_(0)
 {
-  rank_ = world_.rank();
-  size_ = world_.size();
+  parse_command_line(argc, argv);
 }
 
 main_app::~main_app()
 {
-  finalize();
 }
 
-bool main_app::parse_command_line()
+bool main_app::parse_command_line(int argc, char** argv)
 {
   po::options_description desc("Options");
   desc.add_options()
@@ -105,7 +93,7 @@ bool main_app::parse_command_line()
   po::variables_map vm;
   try
   {
-    po::store(po::parse_command_line(argc_, argv_, desc), vm);
+    po::store(po::parse_command_line(argc, argv, desc), vm);
     if(vm.count("help"))
     {
       std::cout << "Graph Randomizer v1.0" << std::endl << desc << std::endl;
@@ -154,39 +142,26 @@ bool main_app::parse_command_line()
 
 int main_app::execute()
 {
-  assert(1 <= size_);
-  if(0 == rank_ && !parse_command_line())
-  {
-    finalize();
-    env_.abort(-1);
-    return -1;
-  }
-  world_.barrier();
-  return (1 == size_) ?
+  return (1 == world_.size()) ?
     execute_with_single_process() :
     execute_with_multiple_processes();
 }
 
 int main_app::execute_with_single_process()
 {
-  //load_graph_data();
-  //load_mu_data();
-  std::cerr << "NOT IMPLEMENTED YET." << std::endl;
-  return -1;
+  std::cout << "[rank-0]: Loading data..." << std::endl;
+  load_graph_data();
+  load_mu_data();
+  std::cout << "[rank-0]: Finished loading data." << std::endl;
+  return execute_working_process();
 }
 
 int main_app::execute_with_multiple_processes()
 {
-  return (0 == rank_) ?
+  return (0 == world_.rank()) ?
     execute_main_process() :
     execute_secondary_process();
 }
-
-void main_app::finalize()
-{
-  // finalizing code here
-}
-
 
 void main_app::load_graph_data()
 {
@@ -196,7 +171,6 @@ void main_app::load_graph_data()
   if(!graph_file.is_open())
   {
     std::cerr << "Failed to open file containing graph." << std::endl;
-    finalize();
     env_.abort(-1);
   }
   archive::text_iarchive ia(graph_file);
@@ -213,7 +187,6 @@ void main_app::load_mu_data()
   if(!mu_file.is_open())
   {
     std::cerr << "Failed to open file containing mu values." << std::endl;
-    finalize();
     env_.abort(-1);
   }
   double mu = 0.0;
@@ -226,189 +199,97 @@ void main_app::load_mu_data()
 
 void main_app::distribute_data()
 {
-  size_t mu_count = mu_values_.size();
-  size_t mu_per_process = mu_count / (size_ - 1);
-  size_t remainder = 0;
-  if(0 == mu_per_process)
+  std::size_t mu_count = mu_values_.size();
+  std::size_t mu_per_process = mu_count / (world_.size() - 1);
+  for(std::size_t i = 1; i < world_.size() && !mu_values_.empty(); ++i)
   {
-    mu_per_process = 1;
-  }
-  else
-  {
-    remainder = mu_count - mu_per_process * (size_ - 1);
-  }
-  size_t base_index = 0;
-  for(size_t i = 1; i < size_; ++i)
-  {
-    world_.send(i, static_cast<int>(message_tag::vertex_count), gr_data_.vertex_count_);
-    world_.send(i, static_cast<int>(message_tag::probability), gr_data_.probability_);
-    world_.send(i, static_cast<int>(message_tag::graph), gr_data_.graph_);
-    world_.send(i, static_cast<int>(message_tag::step_count), step_count_);
-    world_.send(i, static_cast<int>(message_tag::pass_count), pass_count_);
-    world_.send(i, static_cast<int>(message_tag::graph_step), graph_step_);
+    // send output directory name
+    world_.send(i, static_cast<int>(message_tag::results_directory), output_directory_);
 
-    size_t mu_per_process_i = mu_per_process;
-    if(0 != remainder)
-    {
-      ++mu_per_process_i;
-      --remainder;
-    }
-    std::vector<double> mu_values_for_process_i(mu_values_.begin() + base_index, mu_values_.begin() + base_index + mu_per_process_i);
-    world_.send(i, static_cast<int>(message_tag::mu_values_vector), mu_values_for_process_i);
-    rank_to_mu_indexes_range_[i] = std::make_pair(base_index, mu_per_process_i);
-    base_index += mu_per_process_i;
-
-    world_.send(i, static_cast<int>(message_tag::task_type), type_);
-    world_.recv(i, static_cast<int>(message_tag::sync));
-  }
-}
-
-void main_app::collect_results()
-{
-  std::vector<mpi::request> reqs;
-  std::vector<mpi::request> graph_reqs;
-  size_t mu_count = mu_values_.size();
-  reqs.resize(mu_count);
-  graph_reqs.resize(mu_count);
-  std::vector<std::vector<double>> results;
-  results.resize(mu_count);
-  std::vector<std::vector<std::string>> graphs;
-  graphs.resize(mu_count);
-  size_t base_index = 0;
-  for(size_t i = 1; i < size_; ++i)
-  {
-    for(size_t j = 0; j < rank_to_mu_indexes_range_[i].second; ++j)
-    {
-      reqs[base_index + j] = world_.irecv(i, static_cast<int>(message_tag::results_base)*i+j, results[base_index + j]);
-      graph_reqs[base_index + j] = world_.irecv(i, static_cast<int>(message_tag::results_graphs)*i+j, graphs[base_index + j]);
-    }
-    base_index += rank_to_mu_indexes_range_[i].second;
-  }
-  std::vector<std::future<void>> workers;
-  prepare_output_directory();
-  std::chrono::milliseconds span(2000);
-  while(!reqs.empty() || !graph_reqs.empty())
-  {
-    if(!reqs.empty())
-    {
-      const boost::optional<std::pair<mpi::status, std::vector<mpi::request>::iterator>>& finished =
-        mpi::test_any(reqs.begin(), reqs.end());
-      if(finished)
-      {
-        workers.emplace_back(std::async(std::launch::async,
-          [&]
-          {
-            int source = (*finished).first.source();
-            int tag = (*finished).first.tag();
-            int mu_index = rank_to_mu_indexes_range_[source].first;
-            mu_index += tag - source * static_cast<int>(message_tag::results_base);
-            write_output(mu_values_[mu_index], results[mu_index]);
-            // clean-up unused memory
-            results[mu_index].clear();
-            results[mu_index].shrink_to_fit();
-          }
-        ));
-        reqs.erase((*finished).second);
-      }
-    }
-
-    if(!graph_reqs.empty())
-    {
-      const boost::optional<std::pair<mpi::status, std::vector<mpi::request>::iterator>>& finished =
-        mpi::test_any(graph_reqs.begin(), graph_reqs.end());
-      if(finished)
-      {
-        workers.emplace_back(std::async(std::launch::async,
-          [&]
-          {
-            int source = (*finished).first.source();
-            int tag = (*finished).first.tag();
-            int mu_index = rank_to_mu_indexes_range_[source].first;
-            mu_index += tag - source * static_cast<int>(message_tag::results_graphs);
-            write_output(mu_values_[mu_index], graphs[mu_index]);
-            // clean-up unused memory
-            graphs[mu_index].clear();
-            graphs[mu_index].shrink_to_fit();
-          }
-        ));
-        graph_reqs.erase((*finished).second);
-      }
-    }
-    std::this_thread::sleep_for(span);
-  }
-  while(!workers.empty())
-  {
-    std::vector<std::future<void>>::iterator it = workers.begin();
-    while(workers.end() != it)
-    {
-      if(std::future_status::ready == it->wait_for(span))
-      {
-        it = workers.erase(it);
-      }
-      else
-      {
-        ++it;
-      }
-    }
+    // send mu values for calculation
+    std::vector<double> mu_values(mu_values_.begin(), mu_values_.begin() + mu_per_process);
+    world_.send(i, static_cast<int>(message_tag::mu_values_vector), mu_values);
+    mu_values_.erase(mu_values_.begin(), mu_values_.begin() + mu_per_process);
   }
 }
 
 int main_app::execute_main_process()
 {
-  assert(1 < size_);
-  std::cout << "[main]: Loading data..." << std::endl;
+  assert(1 < world_.size());
+  std::cout << "[rank-0]: Loading data..." << std::endl;
   load_graph_data();
   load_mu_data();
-  std::cout << "[main]: Finished loading data." << std::endl;
-  std::cout << "[main]: Distributing data to processes..." << std::endl;
+  std::cout << "[rank-0]: Finished loading data." << std::endl;
+  std::cout << "[rank-0]: Distributing data to processes..." << std::endl;
+  prepare_output_directory();
   distribute_data();
-  std::cout << "[main]: Finished distributing data to processes." << std::endl;
-  std::cout << "[main]: Collecting results..." << std::endl;
-  collect_results();
-  std::cout << "[main]: Finished collecting results." << std::endl;
-  return 0;
-}
-
-void main_app::receive_data()
-{
-  world_.recv(0, static_cast<int>(message_tag::vertex_count), gr_data_.vertex_count_);
-  world_.recv(0, static_cast<int>(message_tag::probability), gr_data_.probability_);
-  world_.recv(0, static_cast<int>(message_tag::graph), gr_data_.graph_);
-  world_.recv(0, static_cast<int>(message_tag::step_count), step_count_);
-  world_.recv(0, static_cast<int>(message_tag::pass_count), pass_count_);
-  world_.recv(0, static_cast<int>(message_tag::graph_step), graph_step_);
-  world_.recv(0, static_cast<int>(message_tag::mu_values_vector), mu_values_);
-  world_.recv(0, static_cast<int>(message_tag::task_type), type_);
-  world_.send(0, static_cast<int>(message_tag::sync));
+  std::cout << "[rank-0]: Finished distributing data to processes." << std::endl;
+  return execute_working_process();
 }
 
 int main_app::execute_secondary_process()
 {
+  assert(1 < world_.size());
+  std::cout << "[rank-" << world_.rank() << "]: Loading data..." << std::endl;
+  load_graph_data();
+  std::cout << "[rank-" << world_.rank() << "]: Finished loading data." << std::endl;
   receive_data();
-  size_t mu_count = mu_values_.size();
-  for(size_t i = 0; i < mu_count; ++i)
+  execute_working_process();
+}
+
+void main_app::receive_data()
+{
+  world_.recv(0, static_cast<int>(message_tag::mu_values_vector), mu_values_);
+  world_.recv(0, static_cast<int>(message_tag::results_directory), output_directory_);
+}
+
+int main_app::execute_working_process()
+{
+  if(!mu_values_.empty())
   {
-    std::vector<double> results;
-    std::vector<std::string> serialized_graphs;
-    for(size_t p = 0; p < pass_count_; ++p)
+    std::cout << "[rank-" << world_.rank() << "]: Generating trajectories..." << std::endl;
+    size_t mu_count = mu_values_.size();
+    std::cout << mu_count << std::endl;
+    for(size_t i = 0; i < mu_count; ++i)
     {
-      std::shared_ptr<gr::base_task> task = gr::get_task(gr_data_.graph_, mu_values_[i], step_count_, graph_step_, type_); 
-      task->perform_randomization();
-      const std::vector<size_t>& results_for_i = task->results();
-      results.resize(results_for_i.size());
-      //assert(step_count_ + 1 == results_for_i.size());
-      for(size_t j = 0; j < results_for_i.size(); ++j)
+      std::vector<double> results;
+      std::vector<std::string> serialized_graphs;
+      for(size_t p = 0; p < pass_count_; ++p)
       {
-        results[j] += static_cast<double>(results_for_i[j]);
+        std::shared_ptr<gr::base_task> task = gr::get_task(gr_data_.graph_, mu_values_[i], step_count_, graph_step_, type_);
+        task->perform_randomization();
+        const std::vector<size_t>& results_for_i = task->results();
+        results.resize(results_for_i.size());
+        //assert(step_count_ + 1 == results_for_i.size());
+        for(size_t j = 0; j < results_for_i.size(); ++j)
+        {
+          results[j] += static_cast<double>(results_for_i[j]);
+        }
+        serialized_graphs = task->serialized_graphs();
       }
-      serialized_graphs = task->serialized_graphs();
+      for(size_t j = 0; j < results.size(); ++j)
+      {
+        results[j] /= pass_count_;
+      }
+      write_output(mu_values_[i], results);
+      write_output(mu_values_[i], serialized_graphs);
     }
-    for(size_t j = 0; j < results.size(); ++j)
+    std::cout << "[rank-" << world_.rank() << "]: Finished generating trajectories." << std::endl;
+  }
+
+  std::vector<mpi::request> waiting_for;
+  for(std::size_t i = 0; i < world_.size(); ++i)
+  {
+    if(i != world_.rank())
     {
-      results[j] /= pass_count_;
+      world_.isend(i, static_cast<int>(message_tag::sync));
+      waiting_for.push_back(world_.irecv(i, static_cast<int>(message_tag::sync)));
     }
-    world_.send(0, static_cast<int>(message_tag::results_base)*rank_ + i, results);
-    world_.send(0, static_cast<int>(message_tag::results_graphs)*rank_ + i, serialized_graphs);
+  }
+  std::chrono::milliseconds span(1500);
+  while(!mpi::test_all(waiting_for.begin(), waiting_for.end()))
+  {
+    std::this_thread::sleep_for(span);
   }
   return 0;
 }
@@ -444,7 +325,7 @@ void main_app::write_output(double mu, const std::vector<double>& result) const
   output << gr_data_.vertex_count_ << " " << gr_data_.probability_ << " " << mu << std::endl;
   for(size_t i = 0; i < result.size(); ++i)
   {
-    output << i << " " << result[i] << std::endl;
+    output << i << " " << result[i] << "\n";
   }
   output.close();
 }
@@ -470,10 +351,8 @@ void main_app::write_output(double mu, const std::vector<std::string>& result) c
     }
     boost::archive::text_oarchive oa(file);
     oa << gr_data_.vertex_count_ << gr_data_.probability_;
-    std::string decompressed;
-    utils::decompress_string(result[i], decompressed);
     undirected_graph graph;
-    utils::deserialize_graph(decompressed, graph);
+    utils::deserialize_graph(result[i], graph);
     boost::serialization::save(oa, graph, 0);
 
     file.close();

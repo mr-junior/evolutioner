@@ -16,7 +16,8 @@ base_task::base_task(const undirected_graph& graph, double mu, size_t step_count
   mu_(mu),
   initial_step_count_(step_count),
   current_step_(0),
-  graph_step_(graph_step)
+  graph_step_(graph_step),
+  pool_(10)
 {
   num_triangles_ = count_triangles();
   if(0 == initial_step_count_)
@@ -79,9 +80,7 @@ void base_task::perform_randomization()
     serialized_graphs_.resize(initial_step_count_ / graph_step_ + 1);
     std::string serialized;
     utils::serialize_graph(graph_, serialized);
-    std::string compressed;
-    utils::compress_string(serialized, compressed);
-    serialized_graphs_[graph_count++] = compressed;
+    serialized_graphs_[graph_count++] = serialized;
   }
   while(current_step_ <= initial_step_count_ || !is_stabilized())
   {
@@ -95,9 +94,7 @@ void base_task::perform_randomization()
     {
       std::string serialized;
       utils::serialize_graph(graph_, serialized);
-      std::string compressed;
-      utils::compress_string(serialized, compressed);
-      serialized_graphs_[graph_count++] = compressed;
+      serialized_graphs_[graph_count++] = serialized;
     }
     ++current_step_;
   }

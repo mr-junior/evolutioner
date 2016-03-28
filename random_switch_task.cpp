@@ -1,4 +1,5 @@
 #include "random_switch_task.h"
+
 #include <system_error>
 
 namespace gr
@@ -42,28 +43,8 @@ void random_switch_task::make_randomization_step()
 
   edge edge_to_remove;
   vertex source1, target1;
-  std::thread* thread1 = 0;
-  //std::thread* thread2 = 0;
-  try
+  std::future<void> result = pool_.enqueue([&]()
   {
-    thread1 = new std::thread([&]()
-    {
-      edge_to_remove = boost::random_edge(graph_, rand_generator_);
-      source1 = boost::source(edge_to_remove, graph_);
-      target1 = boost::target(edge_to_remove, graph_);
-      adjacency_iterator v, v_end;
-      for(boost::tie(v, v_end) = boost::adjacent_vertices(source1, graph_); v != v_end; ++v)
-      {
-        if(*v != target1 && boost::edge(*v, target1, graph_).second)
-        {
-          ++removed;
-        }
-      }
-    });
-  }
-  catch(std::system_error&)
-  {
-    //std::cout << "No resources to create new thread #1" << std::endl;
     edge_to_remove = boost::random_edge(graph_, rand_generator_);
     source1 = boost::source(edge_to_remove, graph_);
     target1 = boost::target(edge_to_remove, graph_);
@@ -75,7 +56,7 @@ void random_switch_task::make_randomization_step()
         ++removed;
       }
     }
-  }
+  });
 
   boost::graph_traits<undirected_graph>::edges_size_type added_edge_num = 0;
   std::pair<vertex, vertex> edge_to_add;
@@ -93,16 +74,12 @@ void random_switch_task::make_randomization_step()
     }
   }
 
-  if(0 != thread1)
-  {
-    thread1->join();
-    delete thread1;
-  }
+  result.get();
 
-  if(edge_to_add.first == source1 && boost::edge(edge_to_add.second, target1, graph_).second ||
-     edge_to_add.first == target1 && boost::edge(edge_to_add.second, source1, graph_).second ||
-     edge_to_add.second == source1 && boost::edge(edge_to_add.first, target1, graph_).second ||
-     edge_to_add.second == target1 && boost::edge(edge_to_add.first, source1, graph_).second)
+  if((edge_to_add.first == source1 && boost::edge(edge_to_add.second, target1, graph_).second) ||
+     (edge_to_add.first == target1 && boost::edge(edge_to_add.second, source1, graph_).second) ||
+     (edge_to_add.second == source1 && boost::edge(edge_to_add.first, target1, graph_).second) ||
+     (edge_to_add.second == target1 && boost::edge(edge_to_add.first, source1, graph_).second))
   {
     --added;
   }

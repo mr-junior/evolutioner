@@ -53,57 +53,43 @@ void fixed_degree_task::make_randomization_step()
   int removed1 = 0;
   int added1 = 0;
 
-  std::function<void()> f = [&]()
+  std::future<void> result = pool_.enqueue([&]()
   {
     adjacency_iterator v, v_end;
     for(boost::tie(v, v_end) = boost::adjacent_vertices(vs1, graph_); v != v_end; ++v)
     {
-      if(*v != vt1 && true == boost::edge(*v, vt1, graph_).second)
+      if(*v != vt1 && boost::edge(*v, vt1, graph_).second)
       {
         ++removed1;
       }
-      if(*v != vs2 && true == boost::edge(*v, vs2, graph_).second)
+      if(*v != vs2 && boost::edge(*v, vs2, graph_).second)
       {
         ++added1;
       }
     }
-  };
-
-  std::thread* t1 = 0;
-  try
-  {
-    t1 = new std::thread(f);
-  }
-  catch(...)
-  {
-    //std::cout << "Cannot create new thread, executing in main..." << std::endl;
-    f();
-  }
+  });
 
   adjacency_iterator v, v_end;
   for(boost::tie(v, v_end) = boost::adjacent_vertices(vt2, graph_); v != v_end; ++v)
   {
-    if(*v != vs2  && true == boost::edge(*v, vs2, graph_).second)
+    if(*v != vs2 && boost::edge(*v, vs2, graph_).second)
     {
       ++removed;
     }
-    if(*v != vt1 && true == boost::edge(*v, vt1, graph_).second)
+    if(*v != vt1 && boost::edge(*v, vt1, graph_).second)
     {
       ++added;
     }
   }
 
-  if(0 != t1)
-  {
-    t1->join();
-    delete t1;
-  }
+  result.get();
+
   added += added1;
   removed += removed1;
   boost::add_edge(vs1, vs2, graph_);
   boost::add_edge(vt1, vt2, graph_);
   int delta = added - removed;
-  if(true == check_step(delta))
+  if(check_step(delta))
   {
     num_triangles_ += delta;
     return; 

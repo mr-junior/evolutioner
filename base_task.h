@@ -1,6 +1,7 @@
 #pragma once
 
 #include "defs.h"
+#include "thread_pool.h"
 
 #include <boost/graph/adjacency_list.hpp>
 #include <boost/graph/erdos_renyi_generator.hpp>
@@ -47,6 +48,7 @@ protected:
   size_t current_step_;
   size_t graph_step_;
   std::vector<std::string> serialized_graphs_;
+  thread_pool pool_;
 };
 
 }
