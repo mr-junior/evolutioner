@@ -32,15 +32,8 @@ private:
   void load_graph_data();
   void load_mu_data();
   void prepare_output_directory();
-  void write_output(double mu, const std::vector<double>& result) const;
-  void write_output(double mu, const std::vector<std::string>& result) const;
-
-  struct graph_data
-  {
-    undirected_graph graph_;
-    size_t vertex_count_;
-    double probability_;
-  };
+  //void write_output(double mu, const std::vector<double>& result) const;
+  //void write_output(double mu, const std::vector<std::string>& result) const;
 
 private:
   mpi::environment env_;
@@ -49,7 +42,7 @@ private:
   std::string output_directory_;
   std::string graph_file_name_;
   std::string mu_file_name_;
-  graph_data gr_data_;
+  std::shared_ptr<graph_data> gr_data_;
   std::vector<double> mu_values_;
   std::size_t step_count_;
   std::size_t pass_count_;

@@ -1,23 +1,21 @@
 #include "base_task.h"
 #include "utils.h"
 
-#include <boost/archive/text_oarchive.hpp> 
-#include <boost/archive/text_iarchive.hpp> 
-
 #include <future>
 #include <queue>
 
 namespace gr
 {
 
-base_task::base_task(const undirected_graph& graph, double mu, size_t step_count, size_t graph_step) :
-  graph_(graph),
+base_task::base_task(std::shared_ptr<graph_data> graph_data, double mu, size_t step_count, size_t graph_step, const std::string& output_dir) :
+  gr_data_(graph_data),
   rand_generator_(time(NULL)),
   mu_(mu),
   initial_step_count_(step_count),
   current_step_(0),
   graph_step_(graph_step),
-  pool_(10)
+  pool_(10),
+  output_dir_(output_dir)
 {
   num_triangles_ = count_triangles();
   if(0 == initial_step_count_)
@@ -26,19 +24,9 @@ base_task::base_task(const undirected_graph& graph, double mu, size_t step_count
   }
 }
 
-const std::vector<size_t>& base_task::results() const
-{
-  return results_;
-}
-
 const undirected_graph& base_task::graph() const
 {
-  return graph_;
-}
-
-const std::vector<std::string>& base_task::serialized_graphs() const
-{
-  return serialized_graphs_;
+  return gr_data_->graph_;
 }
 
 size_t base_task::count_triangles()
@@ -46,16 +34,20 @@ size_t base_task::count_triangles()
   size_t num = 0;
   edge_iterator ei, ei_end;
   // iterate over edges
-  for(tie(ei, ei_end) = boost::edges(graph_); ei != ei_end; ++ei)
+  std::tie(ei, ei_end) = boost::edges(graph());
+  std::vector<edge> edges(ei, ei_end);
+#pragma omp parallel for
+  for(std::size_t i = 0; i < edges.size(); ++i)
   {
     // get edge vertices
-    vertex vs = boost::source(*ei, graph_);
-    vertex vt = boost::target(*ei, graph_);
+    edge& e = edges[i];
+    vertex vs = boost::source(e, graph());
+    vertex vt = boost::target(e, graph());
     // get adjacent vertices for them
     adjacency_iterator vsi, vsi_end, vti, vti_end;
-    for(tie(vsi, vsi_end) = boost::adjacent_vertices(vs, graph_); vsi != vsi_end; ++vsi)
+    for(tie(vsi, vsi_end) = boost::adjacent_vertices(vs, graph()); vsi != vsi_end; ++vsi)
     {
-      for(tie(vti, vti_end) = boost::adjacent_vertices(vt, graph_); vti != vti_end; ++vti)
+      for(tie(vti, vti_end) = boost::adjacent_vertices(vt, graph()); vti != vti_end; ++vti)
       {
         if(*vsi == *vti)
         {
@@ -72,16 +64,59 @@ size_t base_task::count_triangles()
 void base_task::perform_randomization()
 {
   assert(0 == current_step_);
-  results_.push_back(num_triangles_);
-  ++current_step_;
-  unsigned graph_count = 0;
+
+  std::size_t vertices = boost::num_vertices(graph());
+  std::stringstream file_name;
+  std::string props = gr_data_->get_description();
+  file_name << (output_dir_.empty() ? "" : output_dir_ + "/") <<"N" << vertices;
+  if(!props.empty())
+  {
+    file_name << "_" << props;
+  }
+  file_name << "_u" << mu_ << "_T";
+  fs::create_directory(file_name.str());
+  file_name << "/N" << vertices;
+  if(!props.empty())
+  {
+    file_name << "_" << props;
+  }
+  file_name << "_u" << mu_;
+  file_name << ".txt";
+
+  std::ofstream output;
+  output.open(file_name.str());
+  if(!output.is_open())
+  {
+    std::cerr << "Failed to open/create output file." << std::endl;
+    return;
+  }
+  output << vertices << " " << gr_data_->get_prop_value("p") << " " << mu_ << std::endl;
+
+  output << current_step_ << " " << num_triangles_ << "\n";
+  std::string net_prefix;
   if(0 != graph_step_)
   {
-    serialized_graphs_.resize(initial_step_count_ / graph_step_ + 1);
-    std::string serialized;
-    utils::serialize_graph(graph_, serialized);
-    serialized_graphs_[graph_count++] = serialized;
+    std::stringstream file_name;
+    file_name << (output_dir_.empty() ? "" : output_dir_ + "/") <<"N" << vertices;
+    if(!props.empty())
+    {
+      file_name << "_" << props;
+    }
+    file_name << "_u" << mu_ << "_T";
+    fs::create_directory(file_name.str());
+    file_name << "/graphs";
+    fs::create_directory(file_name.str());
+    file_name << "/final_graph__N" << vertices;
+    if(!props.empty())
+    {
+      file_name << "_" << props;
+    }
+    file_name << "_u" << mu_ << "_";
+    net_prefix = file_name.str();
+    file_name << current_step_ << ".txt";
+    gr_data_->serialize(file_name.str());
   }
+  ++current_step_;
   while(current_step_ <= initial_step_count_ || !is_stabilized())
   {
     if(0 == current_step_ % 100000)
@@ -89,15 +124,18 @@ void base_task::perform_randomization()
       std::cout << "current step = " << current_step_ << std::endl;
     }
     make_randomization_step();
-    results_.push_back(num_triangles_);
+    //if(0 == current_step_ % 1000)
+    {
+      output << current_step_ << " " << num_triangles_ << "\n";
+    }
     if((0 != graph_step_) && (0 == current_step_ % graph_step_))
     {
-      std::string serialized;
-      utils::serialize_graph(graph_, serialized);
-      serialized_graphs_[graph_count++] = serialized;
+      std::string file_name = net_prefix + std::to_string(current_step_) + ".txt";
+      gr_data_->serialize(file_name);
     }
     ++current_step_;
   }
+  output.close();
 }
 
 void base_task::make_randomization_step()
@@ -108,8 +146,8 @@ void base_task::make_randomization_step()
 
 size_t base_task::compute_initial_step_count()
 {
-  size_t num_vertices = boost::num_vertices(graph_);
-  size_t num_edges = boost::num_edges(graph_);
+  size_t num_vertices = boost::num_vertices(graph());
+  size_t num_edges = boost::num_edges(graph());
   size_t num_all_edges = num_vertices * (num_vertices - 1) >> 1;
   initial_step_count_ = num_vertices * mu_ * num_all_edges / num_edges; 
   std::cout << "calculated step count " << initial_step_count_ << std::endl;
@@ -137,20 +175,10 @@ bool base_task::is_stabilized()
 
 bool base_task::check_step(int delta)
 {
-  if(delta <= 0)
+  if(delta < 0)
   {
-    std::array<long double, 2> probabilities;
-    probabilities[0] = exp(mu_ * delta);
-    if(std::isinf(probabilities[0]))
-    {
-      probabilities[0] = 0;
-    }
-    probabilities[1] = 1.e0 - probabilities[0];
-    std::discrete_distribution<int> distribution(probabilities.begin(), probabilities.end());
-    if(1 == distribution(rand_generator_))
-    {
-      return false;
-    }
+    std::bernoulli_distribution distrib(exp(mu_ * delta));
+    return distrib(rand_generator_);
   }
   return true;
 }

@@ -1,8 +1,7 @@
-CXX=/home/minas/third_party/mpich2/install/bin/mpic++
-CXXFLAGS=-O3 -std=c++11 -I/home/minas/third_party/boost/install/include -I.
+CXX=mpic++
+CXXFLAGS=-O3 -std=c++11 -I/home/minas/third_party/boost/install/include -I. -fopenmp
 TAG=opt
-LIBBZ2_PATH=/home/minas/third_party/bzip2/install/lib
-LFLAGS=-L/home/minas/third_party/boost/install/lib -lboost_serialization -lboost_graph -lboost_regex -lboost_system -lboost_filesystem -lboost_mpi -lboost_program_options -lboost_iostreams -lbz2 -lpthread
+LFLAGS=-L/home/minas/third_party/boost/install/lib -Wl,-Bstatic -lboost_serialization -lboost_graph -lboost_regex -lboost_system -lboost_filesystem -lboost_mpi -lboost_program_options -lboost_iostreams -Wl,-Bdynamic -lbz2 -lpthread -fopenmp
 DIR=objs
 BIN=bin
 SOURCES=$(wildcard *.cpp)

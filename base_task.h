@@ -21,11 +21,9 @@ namespace gr
 class base_task
 {
 public:
-  base_task(const undirected_graph& graph, double mu, size_t step_count, size_t graph_step);
+  base_task(std::shared_ptr<graph_data> graph, double mu, size_t step_count, size_t graph_step, const std::string& output_dir);
   virtual void perform_randomization();
-  const std::vector<size_t>& results() const;
   const undirected_graph& graph() const;
-  const std::vector<std::string>& serialized_graphs() const;
 
 private:
   virtual void make_randomization_step() = 0;
@@ -37,18 +35,15 @@ protected:
   size_t compute_initial_step_count();
 
 protected:
-  undirected_graph graph_;
+  std::shared_ptr<graph_data> gr_data_;
   size_t num_triangles_;
   random_generator rand_generator_;
-  size_t num_vertices_;
   double mu_;
-  double probability_;
-  std::vector<size_t> results_;
   size_t initial_step_count_;
   size_t current_step_;
   size_t graph_step_;
-  std::vector<std::string> serialized_graphs_;
   thread_pool pool_;
+  std::string output_dir_;
 };
 
 }

@@ -152,6 +152,7 @@ int main_app::execute_with_single_process()
   std::cout << "[rank-0]: Loading data..." << std::endl;
   load_graph_data();
   load_mu_data();
+  prepare_output_directory();
   std::cout << "[rank-0]: Finished loading data." << std::endl;
   return execute_working_process();
 }
@@ -174,8 +175,12 @@ void main_app::load_graph_data()
     env_.abort(-1);
   }
   archive::text_iarchive ia(graph_file);
-  ia >> gr_data_.vertex_count_ >> gr_data_.probability_;
-  serialization::load(ia, gr_data_.graph_, 0);
+  std::size_t vertices;
+  double p;
+  ia >> vertices >> p;
+  undirected_graph graph;
+  serialization::load(ia, graph, 0);
+  gr_data_ = std::make_shared<er_graph_data>(graph, vertices, p);
   graph_file.close();
 }
 
@@ -252,27 +257,29 @@ int main_app::execute_working_process()
     std::cout << mu_count << std::endl;
     for(size_t i = 0; i < mu_count; ++i)
     {
-      std::vector<double> results;
-      std::vector<std::string> serialized_graphs;
-      for(size_t p = 0; p < pass_count_; ++p)
-      {
-        std::shared_ptr<gr::base_task> task = gr::get_task(gr_data_.graph_, mu_values_[i], step_count_, graph_step_, type_);
+      //std::vector<double> results;
+      //std::vector<std::string> serialized_graphs;
+      //for(size_t p = 0; p < pass_count_; ++p)
+      //{
+
+        std::shared_ptr<gr::base_task> task = gr::get_task(gr_data_, mu_values_[i], step_count_, graph_step_, type_, output_directory_);
         task->perform_randomization();
-        const std::vector<size_t>& results_for_i = task->results();
-        results.resize(results_for_i.size());
-        //assert(step_count_ + 1 == results_for_i.size());
-        for(size_t j = 0; j < results_for_i.size(); ++j)
-        {
-          results[j] += static_cast<double>(results_for_i[j]);
-        }
-        serialized_graphs = task->serialized_graphs();
-      }
-      for(size_t j = 0; j < results.size(); ++j)
-      {
-        results[j] /= pass_count_;
-      }
-      write_output(mu_values_[i], results);
-      write_output(mu_values_[i], serialized_graphs);
+
+      //  const std::vector<size_t>& results_for_i = task->results();
+      //  results.resize(results_for_i.size());
+      //  //assert(step_count_ + 1 == results_for_i.size());
+      //  for(size_t j = 0; j < results_for_i.size(); ++j)
+      //  {
+      //    results[j] += static_cast<double>(results_for_i[j]);
+      //  }
+      //  serialized_graphs = task->serialized_graphs();
+      //}
+      //for(size_t j = 0; j < results.size(); ++j)
+      //{
+      //  results[j] /= pass_count_;
+      //}
+      //write_output(mu_values_[i], results);
+      //write_output(mu_values_[i], serialized_graphs);
     }
     std::cout << "[rank-" << world_.rank() << "]: Finished generating trajectories." << std::endl;
   }
@@ -307,56 +314,56 @@ void main_app::prepare_output_directory()
   fs::create_directory(output_directory_);
 }
 
-void main_app::write_output(double mu, const std::vector<double>& result) const
-{
-  std::stringstream file_name;
-  file_name << (output_directory_.empty() ? "" : output_directory_ + "/") <<"N" << gr_data_.vertex_count_ 
-    << "_p" << gr_data_.probability_ << "_u" << mu << "_T";
-  fs::create_directory(file_name.str());
-  file_name << "/N" << gr_data_.vertex_count_ << "_p" << gr_data_.probability_ << "_u" << mu << ".txt";
-
-  std::ofstream output;
-  output.open(file_name.str());
-  if(!output.is_open())
-  {
-    std::cerr << "Failed to open/create output file." << std::endl;
-    return;
-  }
-  output << gr_data_.vertex_count_ << " " << gr_data_.probability_ << " " << mu << std::endl;
-  for(size_t i = 0; i < result.size(); ++i)
-  {
-    output << i << " " << result[i] << "\n";
-  }
-  output.close();
-}
-
-void main_app::write_output(double mu, const std::vector<std::string>& result) const
-{
-  for(size_t i = 0; i < result.size(); ++i)
-  {
-    std::stringstream file_name;
-    file_name << (output_directory_.empty() ? "" : output_directory_ + "/") <<"N" << gr_data_.vertex_count_ 
-      << "_p" << gr_data_.probability_ << "_u" << mu << "_T";
-    fs::create_directory(file_name.str());
-    file_name << "/graphs";
-    fs::create_directory(file_name.str());
-    file_name << "/final_graph__N" << gr_data_.vertex_count_ << "_p" << gr_data_.probability_ << "_u" << mu << "_" << i * graph_step_ << ".txt";
-
-    std::ofstream file;
-    file.open(file_name.str());
-    if(!file.is_open())
-    {
-      std::cerr << "Failed to open/create output file." << std::endl;
-      return;
-    }
-    boost::archive::text_oarchive oa(file);
-    oa << gr_data_.vertex_count_ << gr_data_.probability_;
-    undirected_graph graph;
-    utils::deserialize_graph(result[i], graph);
-    boost::serialization::save(oa, graph, 0);
-
-    file.close();
-  }
-}
+//void main_app::write_output(double mu, const std::vector<double>& result) const
+//{
+//  std::stringstream file_name;
+//  file_name << (output_directory_.empty() ? "" : output_directory_ + "/") <<"N" << gr_data_.vertex_count_ 
+//    << "_p" << gr_data_.probability_ << "_u" << mu << "_T";
+//  fs::create_directory(file_name.str());
+//  file_name << "/N" << gr_data_.vertex_count_ << "_p" << gr_data_.probability_ << "_u" << mu << ".txt";
+//
+//  std::ofstream output;
+//  output.open(file_name.str());
+//  if(!output.is_open())
+//  {
+//    std::cerr << "Failed to open/create output file." << std::endl;
+//    return;
+//  }
+//  output << gr_data_.vertex_count_ << " " << gr_data_.probability_ << " " << mu << std::endl;
+//  for(size_t i = 0; i < result.size(); ++i)
+//  {
+//    output << i << " " << result[i] << "\n";
+//  }
+//  output.close();
+//}
+//
+//void main_app::write_output(double mu, const std::vector<std::string>& result) const
+//{
+//  for(size_t i = 0; i < result.size(); ++i)
+//  {
+//    std::stringstream file_name;
+//    file_name << (output_directory_.empty() ? "" : output_directory_ + "/") <<"N" << gr_data_.vertex_count_ 
+//      << "_p" << gr_data_.probability_ << "_u" << mu << "_T";
+//    fs::create_directory(file_name.str());
+//    file_name << "/graphs";
+//    fs::create_directory(file_name.str());
+//    file_name << "/final_graph__N" << gr_data_.vertex_count_ << "_p" << gr_data_.probability_ << "_u" << mu << "_" << i * graph_step_ << ".txt";
+//
+//    std::ofstream file;
+//    file.open(file_name.str());
+//    if(!file.is_open())
+//    {
+//      std::cerr << "Failed to open/create output file." << std::endl;
+//      return;
+//    }
+//    boost::archive::text_oarchive oa(file);
+//    oa << gr_data_.vertex_count_ << gr_data_.probability_;
+//    undirected_graph graph;
+//    utils::deserialize_graph(result[i], graph);
+//    boost::serialization::save(oa, graph, 0);
+//
+//    file.close();
+//  }
+//}
 
 }

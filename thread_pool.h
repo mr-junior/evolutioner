@@ -13,7 +13,7 @@
 class thread_pool
 {
 public:
-  thread_pool(size_t);
+  thread_pool(size_t threads);
   template<class F, class... Args>
   auto enqueue(F&& f, Args&&... args) -> std::future<typename std::result_of<F(Args...)>::type>;
   ~thread_pool();

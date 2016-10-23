@@ -3,15 +3,15 @@
 namespace gr
 {
 
-std::shared_ptr<base_task> get_task(const undirected_graph& graph, double mu, size_t step_count, size_t graph_step, const std::string& type)
+std::shared_ptr<base_task> get_task(std::shared_ptr<graph_data> graph_data, double mu, size_t step_count, size_t graph_step, const std::string& type, const std::string& output_dir)
 {
   if(std::string("random_switch") == type)
   {
-    return std::make_shared<random_switch_task>(graph, mu, step_count, graph_step);
+    return std::make_shared<random_switch_task>(graph_data, mu, step_count, graph_step, output_dir);
   }
   else if(std::string("fixed_degree") == type)
   {
-    return std::make_shared<fixed_degree_task>(graph, mu, step_count, graph_step);
+    return std::make_shared<fixed_degree_task>(graph_data, mu, step_count, graph_step, output_dir);
   }
   else
   {

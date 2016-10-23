@@ -5,10 +5,10 @@
 namespace gr
 {
 
-random_switch_task::random_switch_task(const undirected_graph& graph, double mu, size_t step_count, size_t graph_step) :
-  base_task(graph, mu, step_count, graph_step)
+random_switch_task::random_switch_task(std::shared_ptr<graph_data> graph_data, double mu, size_t step_count, size_t graph_step, const std::string& output_dir) :
+  base_task(graph_data, mu, step_count, graph_step, output_dir)
 {
-  std::cout << __PRETTY_FUNCTION__ << std::endl;
+  undirected_graph& graph_ = gr_data_->graph_;
   size_t vertices_count = boost::num_vertices(graph_);
   size_t all_edges_count = vertices_count * (vertices_count - 1) / 2;
   size_t non_existing_edges_count = all_edges_count - boost::num_edges(graph_);
@@ -38,6 +38,7 @@ random_switch_task::~random_switch_task()
 
 void random_switch_task::make_randomization_step()
 {
+  undirected_graph& graph_ = gr_data_->graph_;
   size_t removed = 0;
   size_t added = 0;
 
