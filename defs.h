@@ -110,7 +110,10 @@ struct er_graph_data : graph_data
   {
     if(prop_name == "p")
     {
-      return std::to_string(probability_);
+      //return std::to_string(probability_);
+      std::stringstream ss;
+      ss << probability_;
+      return ss.str();
     }
     return std::string();
   }

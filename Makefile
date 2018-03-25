@@ -1,5 +1,5 @@
 CXX=mpic++
-CXXFLAGS=-O3 -std=c++11 -I/home/minas/third_party/boost/install/include -I. -fopenmp
+CXXFLAGS=-O4 -std=c++14 -I/home/minas/third_party/boost/install/include -I. -fopenmp
 TAG=opt
 LFLAGS=-L/home/minas/third_party/boost/install/lib -Wl,-Bstatic -lboost_serialization -lboost_graph -lboost_regex -lboost_system -lboost_filesystem -lboost_mpi -lboost_program_options -lboost_iostreams -Wl,-Bdynamic -lbz2 -lpthread -fopenmp
 DIR=objs
